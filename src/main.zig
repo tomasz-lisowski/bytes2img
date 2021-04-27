@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const image = @import("image.zig");
 
 var alloctr: *std.mem.Allocator = undefined;
+pub var stdout: std.fs.File.Writer = undefined;
 
 pub const ArgError = error{
     OpInvalid,
@@ -32,8 +33,10 @@ const Op = enum(u8) {
     }
 };
 
+/// Ignores errors
 fn usage() void {
-    std.log.info(
+    stdout.writeByte('\n') catch {};
+    stdout.print(
         \\Usage: bytes2img <[-h | -f | -t] width height img_format byte_src>
         \\
         \\-h,--help: Displays a help message.
@@ -43,7 +46,8 @@ fn usage() void {
         \\Note: The output will be saved inside the current working directory as 'out.[img_format]'.
         \\Note: The 'img_format' is the extension name like 'pbm'.
         \\Note: The byte string is assumed to be a lowercase string of hex digits like '1badb002'. Placing any symbol that is not in the hex alphabet will lead to immediate exit.
-    , .{});
+    , .{}) catch {};
+    stdout.writeByte('\n') catch {};
 }
 
 fn fileReadAll(path: []const u8) ![]u8 {
@@ -53,14 +57,14 @@ fn fileReadAll(path: []const u8) ![]u8 {
     } else {
         path_absolute = try std.fs.path.resolve(alloctr, &[_][]const u8{path});
     }
-    std.log.info("Parsed path to absolute path: '{s}'", .{path_absolute});
+    try stdout.print("Parsed path to absolute path: '{s}'\n", .{path_absolute});
     const file: std.fs.File = try std.fs.openFileAbsolute(path_absolute, std.fs.File.OpenFlags{ .read = true, .write = false });
     const buf: []u8 = try file.readToEndAllocOptions(alloctr, std.math.maxInt(u64), null, @alignOf(u32), null);
-    std.log.info("Read {d} bytes from file", .{buf.len});
+    try stdout.print("Read {d} bytes from file\n", .{buf.len});
     return buf;
 }
 
-// Check if all characters in a buffer are a hex digits (0-9,a-f)
+/// Check if all characters in a buffer are a hex digits (0-9,a-f)
 fn validateHexChars(buffer: []const u8) bool {
     for (buffer) |char| {
         switch (char) {
@@ -78,6 +82,7 @@ pub fn main() !void {
     alloctr = &arena.allocator;
 
     var argv = std.process.args();
+    stdout = std.io.getStdOut().writer();
 
     // Skip exe name
     assert(argv.skip() == true);
@@ -85,9 +90,14 @@ pub fn main() !void {
     // Read byte source type
     const src_op_str = try argv.next(alloctr) orelse return ArgError.NotEnoughArgs;
     const src_op = Op.parse(src_op_str) catch |err| {
-        std.log.emerg("Failed to parse operation string, got: {s}", .{err});
+        try stdout.print("Failed to parse operation string, got: {s}\n", .{err});
         return err;
     };
+    // Early exit since help was requested
+    if (src_op == Op.Help or src_op == Op.HelpLong) {
+        usage();
+        return;
+    }
 
     // Read width and height
     const width_str = try argv.next(alloctr) orelse return ArgError.NotEnoughArgs;
@@ -99,13 +109,14 @@ pub fn main() !void {
     const format_str = try argv.next(alloctr) orelse return ArgError.NotEnoughArgs;
     const format: image.ImageFormat = image.ImageFormat.parse(format_str) catch |err| {
         switch (err) {
-            ArgError.FormatInvalid => std.log.emerg("The provided file format is not supported", .{}),
+            ArgError.FormatInvalid => try stdout.print("The provided file format is not supported\n", .{}),
             else => unreachable,
         }
         return err;
     };
+    const file_name_base = "out";
     var file_name: [16]u8 = undefined;
-    _ = try std.fmt.bufPrint(&file_name, "out.{s}", .{format_str});
+    _ = try std.fmt.bufPrint(&file_name, file_name_base ++ ".{s}", .{format_str});
     // The output file is created and opened here
     const file_save = try std.fs.cwd().createFile(file_name[0..(4 + format_str.len)], std.fs.File.CreateFlags{});
     defer file_save.close();
@@ -119,7 +130,7 @@ pub fn main() !void {
         },
         Op.File, Op.FileLong => {
             const file_path = try (argv.next(alloctr) orelse {
-                std.log.emerg("Expected third argument to be a path to file with bytes", .{});
+                try stdout.print("Expected third argument to be a path to file with bytes\n", .{});
                 return error.InvalidArgs;
             });
             const hex_digits_raw: []u8 = try fileReadAll(file_path);
@@ -131,7 +142,7 @@ pub fn main() !void {
         },
         Op.Text, Op.TextLong => {
             const hex_digits_raw = try (argv.next(alloctr) orelse {
-                std.log.emerg("Expected third argument to be a string of bytes", .{});
+                try stdout.print("Expected third argument to be a string of bytes\n", .{});
                 return error.InvalidArgs;
             });
             if (validateHexChars(hex_digits_raw) == true) {
@@ -162,5 +173,6 @@ pub fn main() !void {
     // This slice contains a byte per pixel/color channel
     const bytes = hex_digits[0..(hex_digits.len / 2)];
 
+    try stdout.print("Writing output to '{s}'\n", .{file_name[0..(file_name_base.len + 1 + format_str.len)]});
     try image.saveFile(&file_save, bytes, format, width, height);
 }
