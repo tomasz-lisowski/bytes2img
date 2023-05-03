@@ -1,2 +1,3 @@
-# Compiler output
+# Compiler output.
 zig-cache/
+zig-out/

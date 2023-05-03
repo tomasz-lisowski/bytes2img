@@ -26,7 +26,7 @@ fn savePbm(bytes: []const u8, file: *const std.fs.File, width: u16, height: u16)
     try file.writer().print("{d} {d}\n", .{ width, height });
 
     var line_width: u16 = 0;
-    for (bytes) |byte, byte_idx| {
+    for (bytes) |byte| {
         if (line_width + 2 + 1 >= 70) {
             try file.writer().writeByte('\n');
             line_width = 0;
@@ -43,7 +43,7 @@ fn savePgm(bytes: []const u8, file: *const std.fs.File, width: u16, height: u16)
 
     var line_width: u16 = 0;
 
-    for (bytes) |byte, byte_idx| {
+    for (bytes) |byte| {
         if (line_width + 2 + 1 >= 70) {
             try file.writer().writeByte('\n');
             line_width = 0;
@@ -61,7 +61,7 @@ fn savePpm(bytes: []const u8, file: *const std.fs.File, width: u16, height: u16)
     try file.writer().print("{d} {d}\n255\n", .{ width, height });
 
     var line_width: u16 = 0;
-    for (bytes) |byte, byte_idx| {
+    for (bytes) |byte| {
         if (line_width + 2 + 1 >= 70) {
             try file.writer().writeByte('\n');
             line_width = 0;
